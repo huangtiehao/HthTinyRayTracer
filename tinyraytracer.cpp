@@ -57,7 +57,7 @@ void render(Sphere& sphere)
             float screen_width = 2 * tan(fov / 2);
             float screen_height = screen_width / aspect_ratio;
             float x = ((i + 0.5) / width) *screen_width-screen_width/2;
-            float y = ((j + 0.5) / height) * screen_height - screen_height / 2;
+            float y = -(((j + 0.5) / height) * screen_height - screen_height / 2);
             //printf("%f %f\n", x, y);
             Vec3f light_position(0, 0, 0);
             Vec3f light_dir(x, y, -1);
