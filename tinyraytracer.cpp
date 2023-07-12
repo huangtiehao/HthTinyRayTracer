@@ -75,7 +75,7 @@ void render(Sphere& sphere)
 }
 
 int main() {
-    Sphere sphere(Vec3f(-3, 0, -16), 2);
+    Sphere sphere(Vec3f(-3, 3, -16), 2);
     render(sphere);
     return 0;
 }
