@@ -6,7 +6,7 @@
 #include "geometry.h"
 const int width = 1024;
 const int height = 768;
-const float fov = 3.14 / 2;    
+const float fov =  1;    
 const float aspect_ratio = 1.0*width / height;
 std::vector<Vec3f> framebuffer;
 class Light
@@ -77,6 +77,9 @@ void writeFile()
     ofs.open("./out.ppm", std::ofstream::out | std::ofstream::binary);
     ofs << "P6\n" << width << " " << height << "\n255\n";
     for (size_t i = 0; i < height * width; ++i) {
+        Vec3f& c = framebuffer[i];
+        float max = std::max(c[0], std::max(c[1], c[2]));
+        if (max > 1) c = c * (1. / max);
         for (size_t j = 0; j < 3; j++) {
             ofs << (char)(255 * std::max(0.f, std::min(1.f, framebuffer[i][j])));
         }
@@ -88,8 +91,8 @@ void render(std::vector<Sphere>& spheres, std::vector<Light>&lights)
     framebuffer.resize(width * height);
     for (size_t j = 0; j < height; j++) {
         for (size_t i = 0; i < width; i++) {
-            float screen_width = 2 * tan(fov / 2);
-            float screen_height = screen_width / aspect_ratio;
+            float screen_width = 2 * tan(fov / 2)*aspect_ratio;
+            float screen_height = 2 * tan(fov / 2);
             float x = ((i + 0.5) / width) *screen_width-screen_width/2;
             float y = -(((j + 0.5) / height) * screen_height - screen_height / 2);
             int spheres_sz = spheres.size();
