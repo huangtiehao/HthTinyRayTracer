@@ -9,15 +9,24 @@ const int height = 768;
 const float fov = 3.14 / 2;    
 const float aspect_ratio = 1.0*width / height;
 std::vector<Vec3f> framebuffer;
+class Material 
+{
+public:
+    Material(const Vec3f& color) : diffuse_color(color) {}
+    Material() : diffuse_color() {}
+    Vec3f diffuse_color;
+};
 class Sphere     
 {
 public:
     Vec3f center;
     float radius;
-    Sphere(const Vec3f& center,const float& radius)
+    Material material;
+    Sphere(const Vec3f& center,const float& radius,Material& material)
     {
         this->center = center;
         this->radius = radius;
+        this->material = material;
     }
     bool raySphere_intersect(const Vec3f& lightPos,const Vec3f& lightDir)
     {
@@ -49,7 +58,7 @@ void writeFile()
     }
     ofs.close();
 }
-void render(Sphere& sphere) 
+void render(std::vector<Sphere>& spheres) 
 {
     framebuffer.resize(width * height);
     for (size_t j = 0; j < height; j++) {
@@ -61,13 +70,17 @@ void render(Sphere& sphere)
             //printf("%f %f\n", x, y);
             Vec3f light_position(0, 0, 0);
             Vec3f light_dir(x, y, -1);
-            if (sphere.raySphere_intersect(light_position, light_dir))
+            int sz = spheres.size();
+            for (int k = 0; k < sz; ++k)
             {
-                framebuffer[j * width + i] = Vec3f(0.4, 0.4, 0.3);
-            }
-            else 
-            {
-                framebuffer[j * width + i] = Vec3f(0.2, 0.7, 0.8);
+                if (spheres[k].raySphere_intersect(light_position, light_dir))
+                {
+                    framebuffer[j * width + i] = spheres[k].material.diffuse_color;
+                }
+                else
+                {
+                    framebuffer[j * width + i] = Vec3f(0.2,0.7,0.8);
+                }
             }
         }
     }
@@ -75,8 +88,16 @@ void render(Sphere& sphere)
 }
 
 int main() {
-    Sphere sphere(Vec3f(-3, 3, -16), 2);
-    render(sphere);
+    Material      ivory(Vec3f(0.4, 0.4, 0.3));
+    Material red_rubber(Vec3f(0.3, 0.1, 0.1));
+
+    std::vector<Sphere> spheres;
+    spheres.push_back(Sphere(Vec3f(-3, 0, -16), 2, ivory));
+    spheres.push_back(Sphere(Vec3f(-1.0, -1.5, -12), 2, red_rubber));
+    spheres.push_back(Sphere(Vec3f(1.5, -0.5, -18), 3, red_rubber));
+    spheres.push_back(Sphere(Vec3f(7, 5, -18), 4, ivory));
+
+    render(spheres);
     return 0;
 }
 
