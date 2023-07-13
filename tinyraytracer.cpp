@@ -24,15 +24,17 @@ public:
 class Material 
 {
 public:
-    Material(float kd,float ks,const Vec3f& color,float specular_exponent) :kd(kd),ks(ks),diffuse_color(color),specular_exponent(specular_exponent) {}
+    Material(float kd,float ks,float kr,const Vec3f& color,float specular_exponent) :kd(kd),ks(ks),kr(kr),diffuse_color(color),specular_exponent(specular_exponent) {}
     Material() : diffuse_color() {}
     Vec3f diffuse_color;
-    float kd;
-    float ks;
+    float kd;//diffuse系数
+    float ks;//specular系数
+    float kr;//反射系数
     float specular_exponent;
 };
-Material ivory(0.6, 0.3, Vec3f(0.4, 0.4, 0.3), 50);
-Material red_rubber(0.9, 0.1, Vec3f(0.3, 0.1, 0.1), 10);
+Material ivory(0.6, 0.3,0.1, Vec3f(0.4, 0.4, 0.3), 50);
+Material red_rubber(0.9, 0.1,0, Vec3f(0.3, 0.1, 0.1), 10);
+Material mirror(0.0, 10.0, 0.8, Vec3f(1.0, 1.0, 1.0), 1425.);
 class Sphere     
 {
 public:
@@ -64,7 +66,7 @@ public:
             if (pdLen - sqrt(radius * radius - dcLen * dcLen) < dist)
             {
                 dist = pdLen - sqrt(radius * radius - dcLen);
-                N = view * dist-center;
+                N = orig+(view * dist)-center;
                 return true;
             }
             else return false;
@@ -90,7 +92,7 @@ void writeFile()
     }
     ofs.close();
 }
-bool scene_intersect(const Vec3f orig, const Vec3f& dir, Vec3f& N, float& dist,std::vector<Sphere>&spheres,Material& material)
+bool scene_intersect(const Vec3f orig, const Vec3f& dir, Vec3f& N, float& dist, std::vector<Sphere>& spheres, Material& material)
 {
     int sz_spheres = spheres.size();
     int f = 0;
@@ -105,59 +107,69 @@ bool scene_intersect(const Vec3f orig, const Vec3f& dir, Vec3f& N, float& dist,s
     if (f)return true;
     return false;
 }
+Vec3f castRay(Vec3f orig, Vec3f dir, std::vector<Sphere>& spheres, std::vector<Light>&lights,int depth)
+{
+    int spheres_sz = spheres.size();
+    float dist = 100000;
+    Vec3f N;//接触点的法向量
+    Material material;
+
+
+    if (depth>4||!scene_intersect(Vec3f(0., 0., 0.), dir, N, dist, spheres, material))
+    {
+        return Vec3f(0.2, 0.7, 0.8);
+    }
+    else
+    {
+        int lights_sz = lights.size();
+        float diffuse_intensity = 0;
+        float specular_intensity1 = 0;
+        float specular_intensity2 = 0;
+        Vec3f hitPoint = orig+(dir * dist);
+        N.normalize();
+        Vec3f reflect_dir = reflect(dir, N).normalize();
+        Vec3f reflect_orig = reflect_dir * N < 0 ? hitPoint - N * 1e-3 : hitPoint + N * 1e-3; // offset the original point to avoid occlusion by the object itself
+        Vec3f reflect_color = castRay(reflect_orig, reflect_dir, spheres, lights, depth + 1);
+        #pragma omp parallel for
+        for (int k = 0; k < lights_sz; ++k)
+        {
+            Vec3f light_dir = lights[k].position - hitPoint;
+            light_dir.normalize();
+            if (N * light_dir <= 0)continue;
+            hitPoint = hitPoint + N * (1e-3);
+            Material none_m = ivory;
+            Vec3f none_N;
+            float PLdist = (lights[k].position - hitPoint).norm();
+            if (scene_intersect(hitPoint, light_dir, none_N, PLdist, spheres, none_m) && PLdist < (lights[k].position - hitPoint).norm())
+            {
+                continue;
+            }
+            Vec3f h = -dir + light_dir;
+            h.normalize();
+            float ambient = 0;
+            diffuse_intensity += lights[k].intensity * std::max(0.f, light_dir * N);
+            float t1 = h * N;
+            float t2 = reflect(-light_dir, N) * (-dir);
+            specular_intensity1 += lights[k].intensity * powf(std::max(0.f, t1), material.specular_exponent);
+            specular_intensity2 += lights[k].intensity * powf(std::max(0.f, t2), material.specular_exponent);
+        }
+        return material.diffuse_color * diffuse_intensity * material.kd + Vec3f(1., 1., 1.) * specular_intensity2 * material.ks+reflect_color*material.kr;
+    }
+}
 void render(std::vector<Sphere>& spheres, std::vector<Light>&lights)
 {
     framebuffer.resize(width * height);
-    for (size_t j = 0; j < height; j++) {
-        for (size_t i = 0; i < width; i++) {
+    for (size_t j = 0; j < height; j++) 
+    {
+        for (size_t i = 0; i < width; i++) 
+        {
             float screen_width = 2 * tan(fov / 2)*aspect_ratio;
             float screen_height = 2 * tan(fov / 2);
             float x = ((i + 0.5) / width) *screen_width-screen_width/2;
             float y = -(((j + 0.5) / height) * screen_height - screen_height / 2);
-            int spheres_sz = spheres.size();
             Vec3f view_direction(x,y,-1);
             view_direction.normalize();
-            float dist=100000;
-            Vec3f N;//接触点的法向量
-            Material material;
-            scene_intersect(Vec3f(0., 0., 0.), view_direction, N, dist, spheres, material);
-            if (dist == 100000)
-            {
-                framebuffer[j * width + i] = Vec3f(0.2,0.7,0.8);
-            }
-            else
-            {
-                
-                int lights_sz = lights.size();
-                float diffuse_intensity=0;
-                float specular_intensity1=0;
-                float specular_intensity2 = 0;
-                Vec3f hitPoint = view_direction * dist;
-                N.normalize();
-                for (int k = 0; k < lights_sz; ++k)
-                {
-                    Vec3f light_dir = lights[k].position -  hitPoint;
-                    light_dir.normalize();
-                    if (N * light_dir <= 0)continue;
-                    hitPoint =hitPoint+N*(1e-3);
-                    Material none_m=ivory;
-                    Vec3f none_N;
-                    float PLdist = (lights[k].position - hitPoint).norm();
-                    if (scene_intersect(hitPoint, light_dir, none_N, PLdist, spheres, none_m)&&PLdist< (lights[k].position - hitPoint).norm())
-                    {
-                        continue;
-                    }
-                    Vec3f h = -view_direction + light_dir;
-                    h.normalize();
-                    float ambient = 0;
-                    diffuse_intensity += lights[k].intensity * std::max(0.f, light_dir * N);
-                    float t1 = h*N;
-                    float t2 = reflect(-light_dir, N) * ( - view_direction);
-                    specular_intensity1 += lights[k].intensity*powf(std::max(0.f,t1), material.specular_exponent);
-                    specular_intensity2 += lights[k].intensity*powf(std::max(0.f,t2), material.specular_exponent);
-                }
-                framebuffer[j * width + i] = material.diffuse_color* diffuse_intensity*material.kd+Vec3f(1.,1.,1.)*specular_intensity2*material.ks;
-            }
+            framebuffer[j * width + i] = castRay(Vec3f(0, 0, 0), view_direction, spheres, lights,0);
         }
     }
     writeFile();
@@ -165,13 +177,11 @@ void render(std::vector<Sphere>& spheres, std::vector<Light>&lights)
 
 int main() 
 {
-
-
     std::vector<Sphere> spheres;
     spheres.push_back(Sphere(Vec3f(-3, 0, -16), 2, ivory));
-    spheres.push_back(Sphere(Vec3f(-1.0, -1.5, -12), 2, red_rubber));
+    spheres.push_back(Sphere(Vec3f(-1.0, -1.5, -12), 2, mirror));
     spheres.push_back(Sphere(Vec3f(1.5, -0.5, -18), 3, red_rubber));
-    spheres.push_back(Sphere(Vec3f(7, 5, -18), 4, ivory));
+    spheres.push_back(Sphere(Vec3f(7, 5, -18), 4, mirror));
 
     std::vector<Light>  lights;
     lights.push_back(Light(Vec3f(-20, 20, 20), 1.5));
