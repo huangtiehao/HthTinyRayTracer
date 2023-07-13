@@ -19,10 +19,10 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="tinyraytracer.cpp" />
+    <ClInclude Include="geometry.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="geometry.h" />
+    <ClCompile Include="tinyraytracer.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>

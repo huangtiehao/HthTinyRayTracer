@@ -67,6 +67,7 @@ public:
             {
                 dist = pdLen - sqrt(radius * radius - dcLen);
                 N = orig+(view * dist)-center;
+                N.normalize();
                 return true;
             }
             else return false;
@@ -92,7 +93,7 @@ void writeFile()
     }
     ofs.close();
 }
-bool scene_intersect(const Vec3f orig, const Vec3f& dir, Vec3f& N, float& dist, std::vector<Sphere>& spheres, Material& material)
+bool scene_intersect(const Vec3f orig, const Vec3f& dir, std::vector<Sphere>& spheres,Vec3f&hit , Vec3f& N, float& dist , Material& material)
 {
     int sz_spheres = spheres.size();
     int f = 0;
@@ -101,21 +102,22 @@ bool scene_intersect(const Vec3f orig, const Vec3f& dir, Vec3f& N, float& dist, 
         if (spheres[i].raySphere_intersect(orig, dir, N, dist))
         {
             f = 1;
+            hit = orig + (dir * dist);
             material = spheres[i].material;
         }
     }
     if (f)return true;
     return false;
 }
-Vec3f castRay(Vec3f orig, Vec3f dir, std::vector<Sphere>& spheres, std::vector<Light>&lights,int depth)
+Vec3f castRay(Vec3f orig, Vec3f dir, std::vector<Sphere>& spheres, std::vector<Light>& lights, int depth)
 {
     int spheres_sz = spheres.size();
     float dist = 100000;
-    Vec3f N;//接触点的法向量
+    Vec3f N,hitPoint;//接触点的法向量
     Material material;
+    
 
-
-    if (depth>4||!scene_intersect(Vec3f(0., 0., 0.), dir, N, dist, spheres, material))
+    if (depth>1||!scene_intersect(orig, dir, spheres, hitPoint, N, dist, material))
     {
         return Vec3f(0.2, 0.7, 0.8);
     }
@@ -125,7 +127,7 @@ Vec3f castRay(Vec3f orig, Vec3f dir, std::vector<Sphere>& spheres, std::vector<L
         float diffuse_intensity = 0;
         float specular_intensity1 = 0;
         float specular_intensity2 = 0;
-        Vec3f hitPoint = orig+(dir * dist);
+
         N.normalize();
         Vec3f reflect_dir = reflect(dir, N).normalize();
         Vec3f reflect_orig = reflect_dir * N < 0 ? hitPoint - N * 1e-3 : hitPoint + N * 1e-3; // offset the original point to avoid occlusion by the object itself
@@ -136,11 +138,13 @@ Vec3f castRay(Vec3f orig, Vec3f dir, std::vector<Sphere>& spheres, std::vector<L
             Vec3f light_dir = lights[k].position - hitPoint;
             light_dir.normalize();
             if (N * light_dir <= 0)continue;
-            hitPoint = hitPoint + N * (1e-3);
             Material none_m = ivory;
             Vec3f none_N;
             float PLdist = (lights[k].position - hitPoint).norm();
-            if (scene_intersect(hitPoint, light_dir, none_N, PLdist, spheres, none_m) && PLdist < (lights[k].position - hitPoint).norm())
+            Vec3f shadow_orig = hitPoint;
+            Vec3f shadow_hp;
+            if (scene_intersect(shadow_orig, light_dir, spheres, shadow_hp, none_N, 
+                PLdist, none_m) && PLdist < (lights[k].position - hitPoint).norm())
             {
                 continue;
             }
