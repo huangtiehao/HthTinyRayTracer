@@ -51,20 +51,6 @@ public:
         this->material = material;
     }
     //从orig位置射出dir方向的线是否与该sphere相交，返回N为接触点的法向向量,dist为orig到接触点的距离
-    bool raySphere_intersect1(const Vec3f& orig, const Vec3f& dir, Vec3f&N,float& t0) const {
-        Vec3f L = center - orig;
-        float tca = L * dir;
-        float d2 = L * L - tca * tca;
-        if (d2 > radius * radius) return false;
-        float thc = sqrtf(radius * radius - d2);
-        t0 = tca - thc;
-        float t1 = tca + thc;
-        if (t0 < 0) t0 = t1;
-        if (t0 < 0) return false;
-        N = orig + dir * t0;
-        N.normalize();
-        return true;
-    }
     bool raySphere_intersect(Vec3f orig,const Vec3f dir,Vec3f& N,float& dist)
     {
         Vec3f view = dir;
@@ -140,8 +126,9 @@ void writeFile()
     }
     ofs.close();
 }
-bool scene_intersect(const Vec3f orig, const Vec3f dir, std::vector<Sphere>& spheres,Vec3f&hit , Vec3f& N, float& dist , Material& material)
+bool scene_intersect(Vec3f orig, Vec3f dir, std::vector<Sphere>& spheres,Vec3f&hit , Vec3f& N, float& dist , Material& material)
 {
+    dir.normalize();
     int sz_spheres = spheres.size();
     int f = 0;
     for (int i = 0; i < sz_spheres; ++i)
@@ -151,6 +138,21 @@ bool scene_intersect(const Vec3f orig, const Vec3f dir, std::vector<Sphere>& sph
             f = 1;
             hit = orig + (dir * dist);
             material = spheres[i].material;
+        }
+    }
+
+    if (fabs(dir.y)>1e-3)
+    {
+        float d=-(orig.y + 4) / dir.y;
+        Vec3f ck_hit = orig + dir * d;
+        if (d>(1e-3)&&d<dist&&fabs(ck_hit.x) < 10 && ck_hit.z<-10 && ck_hit.z>-30)
+        {
+            f = 1;
+            hit = ck_hit;
+            dist= d;
+            N = Vec3f(0,1,0);
+            material = ivory;
+            material.diffuse_color = (int(.5 * hit.x + 1000) + int(.5 * hit.z)) & 1 ? Vec3f(.3, .3, .3) : Vec3f(.3, .2, .1);
         }
     }
     if (f)return true;
@@ -236,7 +238,7 @@ int main()
 {
     std::vector<Sphere> spheres;
     spheres.push_back(Sphere(Vec3f(-3, 0, -16), 2, ivory));
-    spheres.push_back(Sphere(Vec3f(-1.0, 0, -12), 2, glass));
+    spheres.push_back(Sphere(Vec3f(-1.0, -1.5, -12), 2, glass));
     spheres.push_back(Sphere(Vec3f(1.5, -0.5, -18), 3, red_rubber));
     spheres.push_back(Sphere(Vec3f(7, 5, -18), 4, mirror));
 
