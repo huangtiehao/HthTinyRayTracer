@@ -24,17 +24,20 @@ public:
 class Material 
 {
 public:
-    Material(float kd,float ks,float kr,const Vec3f& color,float specular_exponent) :kd(kd),ks(ks),kr(kr),diffuse_color(color),specular_exponent(specular_exponent) {}
+    Material(float refract_index,float kd,float ks,float kr,float krefra,const Vec3f& color,float specular_exponent) :refract_index(refract_index),kd(kd),ks(ks),kr(kr),krefra(krefra), diffuse_color(color), specular_exponent(specular_exponent) {}
     Material() : diffuse_color() {}
     Vec3f diffuse_color;
+    float refract_index;
     float kd;//diffuse系数
     float ks;//specular系数
     float kr;//反射系数
+    float krefra;
     float specular_exponent;
 };
-Material ivory(0.6, 0.3,0.1, Vec3f(0.4, 0.4, 0.3), 50);
-Material red_rubber(0.9, 0.1,0, Vec3f(0.3, 0.1, 0.1), 10);
-Material mirror(0.0, 10.0, 0.8, Vec3f(1.0, 1.0, 1.0), 1425.);
+Material      ivory(1.0, 0.6, 0.3, 0.1, 0.0, Vec3f(0.4, 0.4, 0.3), 50.);
+Material      glass(1.5, 0.0, 0.5, 0.1, 0.8, Vec3f(0.6, 0.7, 0.8), 125.);
+Material red_rubber(1.0, 0.9, 0.1, 0.0, 0.0, Vec3f(0.3, 0.1, 0.1), 10.);
+Material     mirror(1.0, 0.0, 10.0, 0.8, 0.0, Vec3f(1.0, 1.0, 1.0), 1425.);
 class Sphere     
 {
 public:
@@ -48,7 +51,21 @@ public:
         this->material = material;
     }
     //从orig位置射出dir方向的线是否与该sphere相交，返回N为接触点的法向向量,dist为orig到接触点的距离
-    bool raySphere_intersect(Vec3f orig,const Vec3f& dir,Vec3f& N,float& dist)
+    bool raySphere_intersect1(const Vec3f& orig, const Vec3f& dir, Vec3f&N,float& t0) const {
+        Vec3f L = center - orig;
+        float tca = L * dir;
+        float d2 = L * L - tca * tca;
+        if (d2 > radius * radius) return false;
+        float thc = sqrtf(radius * radius - d2);
+        t0 = tca - thc;
+        float t1 = tca + thc;
+        if (t0 < 0) t0 = t1;
+        if (t0 < 0) return false;
+        N = orig + dir * t0;
+        N.normalize();
+        return true;
+    }
+    bool raySphere_intersect(Vec3f orig,const Vec3f dir,Vec3f& N,float& dist)
     {
         Vec3f view = dir;
         Vec3f pc = center-orig;
@@ -78,6 +95,36 @@ public:
 Vec3f reflect(const Vec3f& I, const Vec3f& N) {
     return I - N * 2.f * (I * N);
 }
+Vec3f refract(const Vec3f I, const Vec3f N, const float& refractive_index) { // Snell's law
+    float cosi = -std::max(-1.f, std::min(1.f, I * N));
+    float etai = 1, etat = refractive_index;
+    Vec3f n = N;
+    if (cosi < 0) { // if the ray is inside the object, swap the indices and invert the normal to get the correct result
+        cosi = -cosi;
+        std::swap(etai, etat); n = -N;
+    }
+    float eta = etai / etat;
+    float k = 1 - eta * eta * (1 - cosi * cosi);
+    return k < 0 ? Vec3f(0, 0, 0) : I * eta + n * (eta * cosi - sqrtf(k));
+}
+Vec3f refract1( Vec3f dir, Vec3f N,const float& refract_index)
+{  
+    float costheta1 = N * (-dir);
+    float sintheta1 = sqrt(1 - costheta1 * costheta1);
+    float sintheta2 = sintheta1/refract_index;
+    if (costheta1 < 0)
+    {
+        costheta1 = -costheta1;
+        sintheta2 = sintheta1 * refract_index;
+        N = -N;
+        if (sintheta2 > 1)
+        {
+            return Vec3f(0,0,0);
+        }
+    }
+    float costheta2 = sqrt(1 - sintheta2 * sintheta2);
+    return dir * (sintheta2 / sintheta1) - N * (costheta2 - costheta1 * sintheta2 / sintheta1);
+}
 void writeFile()
 {
     std::ofstream ofs;
@@ -93,7 +140,7 @@ void writeFile()
     }
     ofs.close();
 }
-bool scene_intersect(const Vec3f orig, const Vec3f& dir, std::vector<Sphere>& spheres,Vec3f&hit , Vec3f& N, float& dist , Material& material)
+bool scene_intersect(const Vec3f orig, const Vec3f dir, std::vector<Sphere>& spheres,Vec3f&hit , Vec3f& N, float& dist , Material& material)
 {
     int sz_spheres = spheres.size();
     int f = 0;
@@ -117,7 +164,7 @@ Vec3f castRay(Vec3f orig, Vec3f dir, std::vector<Sphere>& spheres, std::vector<L
     Material material;
     
 
-    if (depth>1||!scene_intersect(orig, dir, spheres, hitPoint, N, dist, material))
+    if (depth>4||!scene_intersect(orig, dir, spheres, hitPoint, N, dist, material))
     {
         return Vec3f(0.2, 0.7, 0.8);
     }
@@ -129,9 +176,14 @@ Vec3f castRay(Vec3f orig, Vec3f dir, std::vector<Sphere>& spheres, std::vector<L
         float specular_intensity2 = 0;
 
         N.normalize();
+        dir.normalize();
+        Vec3f refract_dir = refract(dir, N, material.refract_index).normalize();
+        Vec3f refract_orig = refract_dir * N < 0 ? hitPoint - N * 1e-3 : hitPoint + N * 1e-3; // offset the original point to avoid occlusion by the object itself
+        Vec3f refract_color = castRay(refract_orig, refract_dir, spheres, lights, depth + 1);
         Vec3f reflect_dir = reflect(dir, N).normalize();
         Vec3f reflect_orig = reflect_dir * N < 0 ? hitPoint - N * 1e-3 : hitPoint + N * 1e-3; // offset the original point to avoid occlusion by the object itself
         Vec3f reflect_color = castRay(reflect_orig, reflect_dir, spheres, lights, depth + 1);
+
         #pragma omp parallel for
         for (int k = 0; k < lights_sz; ++k)
         {
@@ -157,7 +209,8 @@ Vec3f castRay(Vec3f orig, Vec3f dir, std::vector<Sphere>& spheres, std::vector<L
             specular_intensity1 += lights[k].intensity * powf(std::max(0.f, t1), material.specular_exponent);
             specular_intensity2 += lights[k].intensity * powf(std::max(0.f, t2), material.specular_exponent);
         }
-        return material.diffuse_color * diffuse_intensity * material.kd + Vec3f(1., 1., 1.) * specular_intensity2 * material.ks+reflect_color*material.kr;
+        //return refract_color * material.krefra;
+        return material.diffuse_color * diffuse_intensity * material.kd + Vec3f(1., 1., 1.) * specular_intensity2 * material.ks+reflect_color*material.kr+refract_color*material.krefra;
     }
 }
 void render(std::vector<Sphere>& spheres, std::vector<Light>&lights)
@@ -183,7 +236,7 @@ int main()
 {
     std::vector<Sphere> spheres;
     spheres.push_back(Sphere(Vec3f(-3, 0, -16), 2, ivory));
-    spheres.push_back(Sphere(Vec3f(-1.0, -1.5, -12), 2, mirror));
+    spheres.push_back(Sphere(Vec3f(-1.0, 0, -12), 2, glass));
     spheres.push_back(Sphere(Vec3f(1.5, -0.5, -18), 3, red_rubber));
     spheres.push_back(Sphere(Vec3f(7, 5, -18), 4, mirror));
 
