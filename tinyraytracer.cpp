@@ -1,6 +1,7 @@
 #include <limits>
 #include <cmath>
 #include <iostream>
+#include <thread>
 #include <fstream>
 #include <vector>
 #include "geometry.h"
@@ -25,7 +26,7 @@ class Material
 {
 public:
     Material(float refract_index,float kd,float ks,float kr,float krefra,const Vec3f& color,float specular_exponent) :refract_index(refract_index),kd(kd),ks(ks),kr(kr),krefra(krefra), diffuse_color(color), specular_exponent(specular_exponent) {}
-    Material() : diffuse_color() {}
+    Material() {}
     Vec3f diffuse_color;
     float refract_index;
     float kd;//diffuseÏµÊý
@@ -215,12 +216,11 @@ Vec3f castRay(Vec3f orig, Vec3f dir, std::vector<Sphere>& spheres, std::vector<L
         return material.diffuse_color * diffuse_intensity * material.kd + Vec3f(1., 1., 1.) * specular_intensity2 * material.ks+reflect_color*material.kr+refract_color*material.krefra;
     }
 }
-void render(std::vector<Sphere>& spheres, std::vector<Light>&lights)
+void render(std::vector<Sphere>& spheres, std::vector<Light>&lights,int li,int ri,int lj,int rj)
 {
-    framebuffer.resize(width * height);
-    for (size_t j = 0; j < height; j++) 
+    for (size_t j = lj; j < rj; j++) 
     {
-        for (size_t i = 0; i < width; i++) 
+        for (size_t i = li; i < ri; i++) 
         {
             float screen_width = 2 * tan(fov / 2)*aspect_ratio;
             float screen_height = 2 * tan(fov / 2);
@@ -236,6 +236,7 @@ void render(std::vector<Sphere>& spheres, std::vector<Light>&lights)
 
 int main() 
 {
+    framebuffer.resize(width * height);
     std::vector<Sphere> spheres;
     spheres.push_back(Sphere(Vec3f(-3, 0, -16), 2, ivory));
     spheres.push_back(Sphere(Vec3f(-1.0, -1.5, -12), 2, glass));
@@ -247,8 +248,20 @@ int main()
     lights.push_back(Light(Vec3f(30, 50, -25), 1.8));
     lights.push_back(Light(Vec3f(30, 20, 30), 1.7));
 
-    render(spheres, lights);
-
+    /*std::thread t1(render, ref(spheres), ref(lights), 0, width, 0, height);
+    t1.join();*/
+    std::thread t1(render, ref(spheres), ref(lights), 0, width / 2,    0       , height / 2);
+    std::thread t2(render, ref(spheres), ref(lights), 0, width / 2,      height/2, height);
+    std::thread t3(render, ref(spheres), ref(lights), width / 2 , width, 0       , height / 2);
+    std::thread t4(render, ref(spheres), ref(lights), width / 2 , width, height/2, height);
+    t1.join();
+    t2.join();
+    t3.join();
+    t4.join();
+    //render(spheres, lights, 0, width / 2, 0, height / 2);
+    //render(spheres, lights, 0, width / 2, height / 2 + 1, height);
+    //render(spheres, lights, width / 2 + 1, width, 0, height / 2);
+    //render(spheres, lights, width / 2 + 1, width, height / 2 + 1, height);
     return 0;
 }
 
